@@ -1,0 +1,432 @@
+<!DOCTYPE html><html><head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+      <title>ArcGIS JavaScript API - Simple Map</title> 
+      <link rel="stylesheet" href="https://js.arcgis.com/4.26/esri/themes/light/main.css">
+      <script src="https://js.arcgis.com/4.26/"></script>
+      <style>
+      html,        
+      body {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      }
+      
+      #mapViewDiv {
+      height: calc(100% - 50px);
+      width: 100%;
+      }
+      
+      #header {
+      height: 50px;
+      width: 100%;
+      background-color: #153d66;
+      color: #fff;
+      font-size: 24px;
+      font-family:"楷体";
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      }
+      
+      #srDiv{
+        height: 40px;
+        padding: 10px;
+      }
+      
+      #optionsDiv {
+      background-color: white;
+      color: black;
+      padding: 6px;
+      max-width: 410px;
+      }
+      
+      #basemapDiv {
+        flex-grow: 8;
+        width:300px;
+        background-color: #eee;
+        overflow: scroll;
+     }  
+     
+      #topbar {
+        background: #fff;
+        padding: 10px;
+      }
+
+      .action-button {
+        font-size: 16px;
+        background-color: transparent;
+        border: 1px solid #d3d3d3;
+        color: #6e6e6e;
+        height: 32px;
+        width: 32px;
+        text-align: center;
+        box-shadow: 0 0 1px rgba(0, 0, 0, 0.3);
+      }
+
+      .action-button:hover,
+      .action-button:focus {
+        background: #0079c1;
+        color: #e4e4e4;
+      }
+
+      .active {
+        background: #0079c1;
+        color: #e4e4e4;     
+      
+    }  
+      </style>
+      
+      <script>
+       require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/WebMap",
+        "esri/widgets/LayerList",
+        "esri/widgets/ScaleBar",
+        "esri/widgets/Search",
+        "esri/widgets/Legend",
+        "esri/portal/Portal",
+        "esri/widgets/BasemapGallery",
+        "esri/widgets/BasemapGallery/support/PortalBasemapsSource",
+        "esri/widgets/Expand",
+        "esri/Graphic",
+        "esri/widgets/DistanceMeasurement2D",
+        "esri/widgets/AreaMeasurement2D",
+        "esri/layers/GraphicsLayer",
+        "esri/widgets/Sketch",
+      ], function (
+        Map,
+        MapView,
+        FeatureLayer,
+        WebMap,
+        LayerList,
+        ScaleBar,
+        Search,
+        Legend,
+        Portal,
+        BasemapGallery,
+        PortalBasemapsSource,
+        Expand,
+        Graphic,
+        DistanceMeasurement2D, 
+        AreaMeasurement2D,
+        GraphicsLayer,
+        Sketch
+      ) {
+      var flayer = new FeatureLayer({url:"https://www.geosceneonline.cn/server/rest/services/Hosted/中国省级夜间灯光标准差图/FeatureServer/0",
+        outFields: ["*"]
+      });
+      
+      var flayer1 = new FeatureLayer({url:"https://www.geosceneonline.cn/server/rest/services/Hosted/省会城市1/FeatureServer/0",
+        outFields: ["*"]
+      });
+      
+      var map = new Map({
+      basemap: {
+            portalItem: {
+              id: "8d91bd39e873417ea21673e0fee87604" // nova basemap
+            }
+          }
+
+      });
+      map.layers.add(flayer);
+      map.layers.add(flayer1)
+      
+      var view = new MapView({
+      container: "mapViewDiv",
+      map: map, 
+      center: [117.28, 26.08],
+      zoom: 6,
+      popup: {
+            autoOpenEnabled: false,
+            dockEnabled: true,
+            dockOptions: {
+              // dock popup at bottom-right side of view
+              buttonEnabled: false,
+              breakpoint: false,
+              position: "bottom-right"
+            }
+          }
+      });
+      
+      
+        //底图库
+        let basemapGallery = new BasemapGallery({
+          view: view,
+          container:basemapDiv
+        });
+
+        view.ui.add(basemapGallery, {
+          position: "central"
+        });              
+
+
+     
+     //草图绘制
+     const graphicsLayer = new GraphicsLayer();
+     view.when(() => {
+          const sketch = new Sketch({
+            layer: graphicsLayer,
+            view: view,
+            // graphic will be selected as soon as it is created
+            creationMode: "update"
+          });
+
+          view.ui.add(sketch, "top-right");
+        });      
+      
+      
+      
+      //查询
+      view.ui.add("optionsDiv", "top-right"); 
+    
+      // additional query fields initially set to null for basic query
+        let distance = null;
+        let units = null;
+
+        //create graphic for mouse point click
+        const pointGraphic = new Graphic({
+          symbol: {
+            type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+            color: [0, 0, 139],
+            outline: {
+              color: [255, 255, 255],
+              width: 1.5
+            }
+          }
+        });
+     // Create graphic for distance buffer
+        const bufferGraphic = new Graphic({
+          symbol: {
+            type: "simple-fill", // autocasts as new SimpleFillSymbol()
+            color: [173, 216, 230, 0.2],
+            outline: {
+              // autocasts as new SimpleLineSymbol()
+              color: [255, 255, 255],
+              width: 1
+            }
+          }
+        });
+
+        // when query type changes, set appropriate values
+        const queryOpts = document.getElementById("query-type");
+
+        queryOpts.addEventListener("change", () => {
+          switch (queryOpts.value) {
+            // values set for distance query
+            case "distance":
+              distance = 5;
+              units = "miles";
+              break;
+            default:
+              // Default set to basic query
+              distance = null;
+              units = null;
+          }
+        });
+        flayer.load().then(() => {
+          // Set the view extent to the data extent
+          view.extent = flayer.fullExtent;
+          flayer.popupTemplate = flayer.createPopupTemplate();
+        });
+
+        view.on("click", (event) => {
+          view.graphics.remove(pointGraphic);
+          if (view.graphics.includes(bufferGraphic)) {
+            view.graphics.remove(bufferGraphic);
+          }
+          queryFeatures(event);
+        });
+
+        function queryFeatures(screenPoint) {
+          const point = view.toMap(screenPoint);
+          flayer
+            .queryFeatures({
+              geometry: point,
+              // distance and units will be null if basic query selected
+              distance: distance,
+              units: units,
+              spatialRelationship: "intersects",
+              returnGeometry: false,
+              returnQueryGeometry: true,
+              outFields: ["*"]
+            })
+            .then((featureSet) => {
+              // set graphic location to mouse pointer and add to mapview
+              pointGraphic.geometry = point;
+              view.graphics.add(pointGraphic);
+              // open popup of query result
+              view.popup.open({
+                location: point,
+                features: featureSet.features,
+                featureMenuOpen: true
+              });
+              if (featureSet.queryGeometry) {
+                bufferGraphic.geometry = featureSet.queryGeometry;
+                view.graphics.add(bufferGraphic);
+              }
+            });
+        }
+        
+ 
+     //测量
+     let activeWidget = null;
+     view.ui.add("topbar", "top-left");
+     document
+          .getElementById("distanceButton")
+          .addEventListener("click", function () {
+            setActiveWidget(null);
+            if (!this.classList.contains("active")) {
+              setActiveWidget("distance");
+            } else {
+              setActiveButton(null);
+            }
+          });
+
+        document
+          .getElementById("areaButton")
+          .addEventListener("click", function () {
+            setActiveWidget(null);
+            if (!this.classList.contains("active")) {
+              setActiveWidget("area");
+            } else {
+              setActiveButton(null);
+            }
+          });
+
+        function setActiveWidget(type) {
+          switch (type) {
+            case "distance":
+              activeWidget = new DistanceMeasurement2D({
+                view: view
+              });
+
+              // skip the initial 'new measurement' button
+              activeWidget.viewModel.start();
+
+              view.ui.add(activeWidget, "top-right");
+              setActiveButton(document.getElementById("distanceButton"));
+              break;
+            case "area":
+              activeWidget = new AreaMeasurement2D({
+                view: view
+              });
+
+              // skip the initial 'new measurement' button
+              activeWidget.viewModel.start();
+
+              view.ui.add(activeWidget, "top-right");
+              setActiveButton(document.getElementById("areaButton"));
+              break;
+            case null:
+              if (activeWidget) {
+                view.ui.remove(activeWidget);
+                activeWidget.destroy();
+                activeWidget = null;
+              }
+              break;
+          }
+        }
+
+        function setActiveButton(selectedButton) {
+          // focus the view to activate keyboard shortcuts for sketching
+          view.focus();
+          let elements = document.getElementsByClassName("active");
+          for (let i = 0; i < elements.length; i++) {
+            elements[i].classList.remove("active");
+          }
+          if (selectedButton) {
+            selectedButton.classList.add("active");
+          }
+        }
+        
+       //图层列表
+     let layerList = new LayerList({
+       view: view
+     });
+  
+        view.ui.add(
+          new Expand({
+            view: view,
+            content: layerList,
+            expanded: false
+          }),
+          "top-left"
+        );      
+    
+         //图例
+            const legend = new Expand({
+              content: new Legend({
+                view: view,
+              }),
+              view: view,
+              expanded: false
+            });
+            view.ui.add(legend, "top-left");   
+
+         //比例尺
+     let scaleBar = new ScaleBar({
+       view: view,
+       style: "ruler",
+       unit: "metric"       
+     });
+     view.ui.add(scaleBar, {
+       position: "bottom-left"
+     });
+
+         //搜索框
+     const searchWidget = new Search({
+       view: view
+     });
+        view.ui.add(
+          new Expand({
+            view: view,
+            content: searchWidget,
+            expanded: false
+          }),
+          "top-left"
+        );      
+       
+ 
+      
+      
+      });
+      </script>      
+      </head>
+      
+      <body>
+        <div id="header">中国2021年省级夜间灯光强度图</div>
+        <div id="mapViewDiv">
+          <div id="viewDiv"></div>
+          <div id="basemapDiv"></div>
+        </div>
+
+    <div id="optionsDiv" class="esri-widget">
+      <p>
+        Select a query type and click a point on the map to view the results.
+      </p>
+      <select id="query-type" class="esri-widget">
+        <option value="basic">Basic Query</option>
+        <option value="distance">Query By Distance</option>
+      </select>
+    </div>
+    
+    <div id="topbar">
+      <button
+        class="action-button esri-icon-measure-line"
+        id="distanceButton"
+        type="button"
+        title="Measure distance between two or more points"
+      ></button>
+      <button
+        class="action-button esri-icon-measure-area"
+        id="areaButton"
+        type="button"
+        title="Measure area"
+      ></button>
+    </div>
+    
+      </html>
